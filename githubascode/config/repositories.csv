@@ -1,0 +1,3 @@
+name,description,visibility,auto_init,has_issues,has_wiki,has_projects
+corp-platform-github,corp-platform-github,public,true,true,false,false
+corp-platform-foundation,corp-platform-foundation,public,true,true,false,false

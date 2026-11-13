@@ -1,0 +1,5 @@
+repository,branch,enforce_admins,required_linear_history,allows_force_pushes,allows_deletions,require_conversation_resolution,require_signed_commits,dismiss_stale_reviews,require_code_owner_reviews,required_approvals,require_last_push_approval
+corp-platform-github,main,false,true,false,false,true,false,true,true,2,true
+corp-platform-github,develop,false,true,false,false,true,false,false,true,1,true
+corp-platform-foundation,main,false,true,false,false,true,false,true,true,2,true
+corp-platform-foundation,develop,false,true,false,false,true,false,false,true,1,true
