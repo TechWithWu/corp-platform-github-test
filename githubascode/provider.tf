@@ -14,10 +14,6 @@ terraform {
       version = ">= 2.40.0"
     }
   }
-
-  backend "azurerm" {
-    use_oidc = true
-  }
 }
 
 provider "github" {

@@ -30,8 +30,8 @@ locals {
     for v in local.environments_data_raw : v.reviewer_teams
   ])))
 
-  user_id_map = { for n in local.all_environment_reviewer_user_names : n => tonumber(data.github_user.environments_reviewers[n].id) }
-  team_id_map = { for s in local.all_environment_reviewer_team_slugs : s => data.github_team.environments_reviewers[s].id }
+  user_id_map = { for n in local.all_environment_reviewer_user_names : n => module.members.user_ids[n] }
+  team_id_map = { for s in local.all_environment_reviewer_team_slugs : s => module.teams.team_ids[s] }
 
   environments_data = {
     for k, v in local.environments_data_raw : k => {

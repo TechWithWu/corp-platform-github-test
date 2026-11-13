@@ -39,7 +39,7 @@ module "environments" {
   source       = "./modules/environments"
   environments = local.environments_data
 
-  depends_on = [module.repositories]
+  depends_on = [module.repositories, module.teams, module.members]
 }
 
 # 6. Azure Service Principals Module
@@ -47,8 +47,6 @@ module "environments" {
 module "azure_service_principals" {
   source                = "./modules/azure_service_principals"
   service_principals    = local.service_principals_data
-  azure_tenant_id       = var.azure_tenant_id
-  azure_subscription_id = var.azure_subscription_id
 }
 
 # 7. Azure RBAC Module
