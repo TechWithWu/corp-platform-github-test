@@ -31,3 +31,33 @@ output "environments" {
   description = "List of repository environment keys provisioned from config/environments.csv"
   value       = module.environments.environment_keys
 }
+
+output "service_principals" {
+  description = "List of created Azure Service Principal names"
+  value       = module.azure_service_principals.service_principal_names
+}
+
+output "azure_tenant_id" {
+  description = "Azure Tenant ID used for OIDC authentication"
+  value       = module.azure_service_principals.tenant_id
+}
+
+output "azure_subscription_id" {
+  description = "Azure Subscription ID"
+  value       = module.azure_service_principals.subscription_id
+}
+
+output "federated_credentials" {
+  description = "List of created Azure AD Federated Identity Credentials"
+  value       = module.azure_federated_credentials.federated_credential_names
+}
+
+output "environment_variables" {
+  description = "Map of provisioned GitHub environment variables"
+  value       = module.environments_variables.environment_variables
+}
+
+output "repository_variables" {
+  description = "Map of provisioned GitHub repository variables"
+  value       = module.environments_variables.repository_variables
+}

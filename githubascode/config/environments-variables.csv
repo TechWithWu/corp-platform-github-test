@@ -1,0 +1,10 @@
+repo,environment,keytype,valuetype,key,value
+corp-platform-github,prod,variable,plaintext,TF_LOG,INFO
+corp-platform-github,prod,secret,reference,DATABASE_PASSWORD,kv-secret-corp-github-db-pwd
+corp-platform-github,dev,variable,plaintext,TF_LOG,DEBUG
+corp-platform-foundation,prod,variable,plaintext,APP_ENV,production
+corp-platform-foundation,prod,secret,reference,API_TOKEN,kv-secret-foundation-api-token
+corp-platform-foundation,dev,variable,plaintext,APP_ENV,development
+myapp-api,prod,variable,plaintext,NODE_ENV,production
+myapp-api,prod,secret,reference,JWT_SECRET,kv-secret-myapp-jwt
+myapp-api,dev,variable,plaintext,NODE_ENV,development

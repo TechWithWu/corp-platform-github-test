@@ -15,24 +15,36 @@ All definitions are centralized in the `/terraformgithubascode/config/` folder:
 │   ├── teams.csv                    # Teams definitions, descriptions, and privacy settings
 │   ├── repositories.csv             # Repositories catalog with visibility and feature toggles
 │   ├── environments.csv             # Per-repository deployment environments (dev, prod)
+│   ├── environments-variables.csv   # Environment & repository variables and reference-backed secrets
 │   ├── branch_protection.csv        # Per-repository branch protection policies
+│   ├── azure-identity/              # Azure identity and OIDC integration configurations
+│   │   ├── service_principals.csv   # Azure AD Application and Service Principal definitions
+│   │   ├── rbac.csv                 # Role assignments across subscriptions and resource groups
+│   │   └── federated_credentials.csv# GitHub Actions OIDC federated credentials
 │   ├── team-members/                # Team member assignment CSVs (contains team, username, role)
 │   │   ├── developer-team.csv
 │   │   ├── security-team.csv
 │   │   ├── qa-team.csv
 │   │   └── it-team.csv
 │   └── repos-team/                  # Repository access permissions (contains repository, team_name, permission)
-│       ├── learn-tf-application.csv
-│       └── learn-tf-infrastructure.csv
+│       ├── corp-platform-github.csv
+│       └── corp-platform-foundation.csv
 ├── modules/
 │   ├── members/                     # Manages GitHub organization memberships
 │   ├── teams/                       # Manages GitHub teams and team membership assignments
 │   ├── repositories/                # Provisions repositories and attaches team access
 │   ├── branch_protection/           # Enforces branch protection policies
-│   └── environments/                # Provisions deployment environments per repository
-├── versions.tf                      # Terraform >= 1.9.0 and integrations/github ~> 6.0
-├── locals.tf                        # Automatically parses all config/*.csv files into typed maps
-├── main.tf                          # Orchestrates the 5 modules with clean dependency chains
+│   ├── environments/                # Provisions deployment environments per repository
+│   ├── azure_service_principals/    # Manages Azure AD Apps and Service Principals
+│   ├── azure_rbac/                  # Manages Azure RBAC role assignments
+│   ├── azure_federated_credentials/ # Manages Azure AD OIDC federated identity credentials
+│   └── environments_variables/      # Manages GitHub vars/secrets & repository Azure OIDC variables
+├── validation-github.tf             # Enforces referential integrity on repositories, environments, branches, teams, members
+├── validation-azure-identity.tf     # Enforces integrity on Azure SP names, RBAC, and federated credential environments
+├── versions.tf                      # Terraform >= 1.5.0
+├── locals.tf                        # Base local path configuration
+├── locals-*.tf                      # Modular CSV parsing into typed maps
+├── main.tf                          # Orchestrates modules with dependency graph
 ├── variables.tf                     # Root variables
 └── outputs.tf                       # Exports key resources, IDs, and URLs
 ```
@@ -45,71 +57,64 @@ All definitions are centralized in the `/terraformgithubascode/config/` folder:
 Defines repositories and repository feature flags:
 ```csv
 name,description,visibility,auto_init,has_issues,has_wiki,has_projects
-learn-tf-infrastructure,Learn Terraform - Infrastructure repository managed as code,public,true,true,false,false
-learn-tf-application,Learn Terraform - Application repository managed as code,public,true,true,false,false
+corp-platform-github,corp-platform-github,public,true,true,false,false
+corp-platform-foundation,corp-platform-foundation,public,true,true,false,false
+myapp-api,Application API service repository,public,true,true,false,false
 ```
 
 ### 2. `config/environments.csv`
 Defines deployment environments configured per repository:
 ```csv
-repository,environment,can_admins_bypass,prevent_self_review,wait_timer
-learn-tf-infrastructure,dev,true,false,0
-learn-tf-infrastructure,prod,false,true,0
-learn-tf-application,dev,true,false,0
-learn-tf-application,prod,false,true,0
+repository,environment,can_admins_bypass,prevent_self_review,wait_timer,reviewer_users,reviewer_teams
+corp-platform-github,prod,false,false,0,"techwithwu","it-team"
+corp-platform-github,dev,false,false,0,"",""
 ```
 
-### 3. `config/branch_protection.csv`
-Defines branch protection rules per repository:
+### 3. `config/environments-variables.csv`
+Defines GitHub environment and repository variables and secrets. Secrets use references rather than plaintext:
 ```csv
-repository,branch,enforce_admins,required_linear_history,allows_force_pushes,allows_deletions,require_conversation_resolution,require_signed_commits,dismiss_stale_reviews,require_code_owner_reviews,required_approvals,require_last_push_approval
-learn-tf-infrastructure,main,true,true,false,false,true,false,true,true,1,true
-learn-tf-application,main,true,true,false,false,true,false,true,true,1,true
+repo,environment,keytype,valuetype,key,value
+corp-platform-github,prod,variable,plaintext,TF_LOG,INFO
+corp-platform-github,prod,secret,reference,DATABASE_PASSWORD,kv-secret-corp-github-db-pwd
+corp-platform-github,dev,variable,plaintext,TF_LOG,DEBUG
 ```
 
-Enforced branch protection attributes:
-- `enforce_admins = true`
-- `required_linear_history = true`
-- `allows_force_pushes = false`
-- `allows_deletions = false`
-- `require_conversation_resolution = true`
-- `require_signed_commits = false`
-- `required_pull_request_reviews`:
-  - `dismiss_stale_reviews = true`
-  - `require_code_owner_reviews = true`
-  - `required_approving_review_count = 1`
-  - `require_last_push_approval = true`
-
-### 4. `config/members.csv`
+### 4. `config/azure-identity/service_principals.csv`
+Defines Azure AD Applications and Service Principals:
 ```csv
-username,role
-alex-tf-edu,member
-terraform-education1,member
+name,owner_team,purpose
+sp-github-actions-bootstrap,platform-team,delegates roles only
+sp-proj001-platform,platform-team,provisions proj001 infrastructure
+sp-proj001-webapi,proj001-team,deploys webapi code to App Service only
 ```
 
-### 5. `config/teams.csv`
+### 5. `config/azure-identity/rbac.csv`
+Defines Azure RBAC role assignments:
 ```csv
-name,description,privacy
-Security Team,Security Team ,closed
-Developer Team,Developer Team ,closed
-QA Team,Quality Assurance Team ,closed
-IT Team,Infrastructure Team ,closed
+sp_name,scope_type,scope_ref,role_definition_name,condition_mode,principal_type,description
+sp-github-actions-bootstrap,management_group,/providers/Microsoft.Management/managementGroups/mg-platform,Role Based Access Control Administrator,exclude_privileged,ServicePrincipal,bootstrap delegates non-privileged roles
 ```
 
-### 6. `config/repos-team/<repository-name>.csv`
-File is named after the repository (e.g. `learn-tf-infrastructure.csv`), and exact repository name is read from the `repository` column:
+### 6. `config/azure-identity/federated_credentials.csv`
+Defines GitHub Actions OIDC federated identity credentials:
 ```csv
-repository,team_name,permission
-learn-tf-infrastructure,Security Team,maintain
-learn-tf-infrastructure,Developer Team,pull
+sp_name,repo_name,environment,subject_type
+sp-github-actions-bootstrap,myapp-api,prod,environment
+sp-github-actions-bootstrap,myapp-api,dev,environment
+sp-github-actions-bootstrap,myapp-api,pull_request,pull_request
 ```
 
-### 7. `config/team-members/<team-name>.csv`
-File is named after the team (e.g. `security-team.csv`), and exact team name is read from the `team` column:
-```csv
-team,username,role
-Security Team,alex-tf-edu,member
-```
+---
+
+## Validation & Plan-Time Enforcement
+
+Preconditions configured via `terraform_data` run during `terraform plan` to catch configuration errors and typos before changes can be applied:
+
+- **Repository Names**: All repository names referenced across `environments.csv`, `branch_protection.csv`, `repos-team/*.csv`, `environments-variables.csv`, and `federated_credentials.csv` must exist in `repositories.csv`.
+- **Environment Names**: Only `dev`, `qa`, `test`, and `prod` are permitted in `environments.csv` and `environments-variables.csv`.
+- **Branch Names**: Only `main` and `develop` are allowed in `branch_protection.csv`.
+- **Team Members & Teams**: All team names in `team-members/*.csv` and `repos-team/*.csv` must exist in `teams.csv`. All usernames in `team-members/*.csv` must exist in `members.csv`.
+- **Azure Identity**: All `sp_name` entries in `rbac.csv` and `federated_credentials.csv` must exist in `service_principals.csv`. Environments in `federated_credentials.csv` must be allowed values (`dev`, `qa`, `test`, `prod`, `pull_request`).
 
 ---
 
@@ -122,7 +127,7 @@ terraform init
 # 2. Validate configuration
 terraform validate
 
-# 3. Plan changes
+# 3. Plan changes (triggers validation assertions)
 terraform plan
 
 # 4. Apply configuration

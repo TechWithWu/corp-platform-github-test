@@ -15,3 +15,22 @@ variable "github_owner" {
   type        = string
   description = "GitHub organization or user name"
 }
+
+variable "azure_tenant_id" {
+  type        = string
+  description = "Azure Tenant ID. If null, inferred from client config data sources."
+  default     = null
+}
+
+variable "azure_subscription_id" {
+  type        = string
+  description = "Azure Subscription ID. If null, inferred from azurerm client config."
+  default     = null
+}
+
+variable "secret_references" {
+  type        = map(string)
+  description = "Mapping of secret reference names to actual secret values (e.g., from Azure Key Vault or CI secrets)"
+  default     = {}
+  sensitive   = true
+}
