@@ -87,7 +87,6 @@ module "environments_variables" {
     subscription_id = module.azure_service_principals.subscription_id
     client_ids      = module.azure_service_principals.client_ids
   }
-  secret_references = var.secret_references
 
   depends_on = [
     module.azure_service_principals,

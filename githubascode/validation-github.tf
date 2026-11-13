@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # GITHUB CONFIGURATION VALIDATION
-# Enforces strict referential integrity during `terraform plan` to catch typos across all CSV configs
+# Enforces strict referential integrity during `terraform plan` to catch typos and duplicates across all CSV configs
 # ---------------------------------------------------------------------------------------------------------------------
 
 locals {
@@ -62,15 +62,15 @@ locals {
     if !contains(local.valid_repository_names, repo)
   ])
 
-  # 2. Check Environments in environments.csv and environments-variables.csv
+  # 2. Check Environments in environments.csv and environments-variables.csv (excluding "repo")
   environments_in_environments_csv = [
     for row in local.environments_raw : lower(trimspace(row.environment))
     if trimspace(try(row.environment, "")) != ""
   ]
 
   environments_in_env_vars_csv = [
-    for row in local.environments_variables_raw : lower(trimspace(row.environment))
-    if trimspace(try(row.environment, "")) != ""
+    for row in local.environments_variables_raw : lower(trimspace(row.env_or_repo))
+    if trimspace(try(row.env_or_repo, "")) != "" && lower(trimspace(row.env_or_repo)) != "repo"
   ]
 
   all_referenced_environments = distinct(concat(
@@ -125,10 +125,22 @@ locals {
     for t in local.referenced_teams_in_repo_team : t
     if !contains(local.valid_team_names, t)
   ])
+
+  # 6. Check Environment & Repository Variable Uniqueness ("repo,env_or_repo,key" must be unique)
+  env_var_definitions = [
+    for row in local.environments_variables_raw :
+    "${trimspace(row.repo)}:${trimspace(row.env_or_repo)}:${trimspace(row.key)}"
+    if trimspace(try(row.repo, "")) != "" && trimspace(try(row.key, "")) != ""
+  ]
+
+  duplicate_env_var_definitions = distinct([
+    for k in local.env_var_definitions : k
+    if length([for item in local.env_var_definitions : item if item == k]) > 1
+  ])
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# TERRAFORM PLAN PRECONDITION VALIDATORS (Fail fast on typo)
+# TERRAFORM PLAN PRECONDITION VALIDATORS (Fail fast on typo or duplicate)
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "terraform_data" "validate_repository_names" {
@@ -144,7 +156,7 @@ resource "terraform_data" "validate_environments" {
   lifecycle {
     precondition {
       condition     = length(local.invalid_environments) == 0
-      error_message = "VALIDATION FAILED: Allowed environments are strictly [dev, qa, test, prod]. Found invalid environments: [${join(", ", local.invalid_environments)}]."
+      error_message = "VALIDATION FAILED: Allowed environments are strictly [dev, qa, test, prod] (or 'repo' in environments-variables.csv). Found invalid environments: [${join(", ", local.invalid_environments)}]."
     }
   }
 }
@@ -181,6 +193,15 @@ resource "terraform_data" "validate_repo_team_teams" {
     precondition {
       condition     = length(local.invalid_repo_team_teams) == 0
       error_message = "VALIDATION FAILED: The following team names in config/repos-team/*.csv do not exist in config/teams.csv: [${join(", ", local.invalid_repo_team_teams)}]."
+    }
+  }
+}
+
+resource "terraform_data" "validate_environments_variables_no_duplicates" {
+  lifecycle {
+    precondition {
+      condition     = length(local.duplicate_env_var_definitions) == 0
+      error_message = "VALIDATION FAILED: Duplicate environment variable definitions detected for (repo, env_or_repo, key): [${join(", ", local.duplicate_env_var_definitions)}]. Each combination of repo, env_or_repo, and key must be strictly unique."
     }
   }
 }

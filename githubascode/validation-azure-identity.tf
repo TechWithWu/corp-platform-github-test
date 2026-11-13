@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # AZURE IDENTITY CONFIGURATION VALIDATION
-# Enforces referential integrity between service_principals.csv, rbac.csv, and federated_credentials.csv
+# Enforces referential integrity between service_principals.csv, rbac.csv, federated_credentials.csv, and environments-variables.csv
 # ---------------------------------------------------------------------------------------------------------------------
 
 locals {
@@ -45,6 +45,17 @@ locals {
     for env in local.referenced_fc_environments : env
     if !contains(local.allowed_fc_environments, env)
   ])
+
+  # 4. Validate sp_name in environments-variables.csv when type is azure_credential
+  referenced_sp_in_env_vars = distinct([
+    for row in local.environments_variables_raw : trimspace(row.sp_name)
+    if lower(trimspace(try(row.type, ""))) == "azure_credential" && trimspace(try(row.sp_name, "")) != ""
+  ])
+
+  invalid_env_vars_sp_names = sort([
+    for sp in local.referenced_sp_in_env_vars : sp
+    if !contains(local.valid_sp_names, sp)
+  ])
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -74,6 +85,15 @@ resource "terraform_data" "validate_azure_federated_credentials_env" {
     precondition {
       condition     = length(local.invalid_fc_environments) == 0
       error_message = "VALIDATION FAILED: Allowed environments in config/azure-identity/federated_credentials.csv are [dev, qa, test, prod, pull_request]. Found invalid: [${join(", ", local.invalid_fc_environments)}]."
+    }
+  }
+}
+
+resource "terraform_data" "validate_azure_env_vars_sp" {
+  lifecycle {
+    precondition {
+      condition     = length(local.invalid_env_vars_sp_names) == 0
+      error_message = "VALIDATION FAILED: The following sp_name values in config/environments-variables.csv do not exist in service_principals.csv: [${join(", ", local.invalid_env_vars_sp_names)}]."
     }
   }
 }

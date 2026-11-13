@@ -1,101 +1,86 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # GITHUB ENVIRONMENTS & REPOSITORY VARIABLES / SECRETS MODULE
-# Manages environment/repository variables and secrets from config/environments-variables.csv
-# and provisions repository-level Azure OIDC credentials (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)
+# Manages environment/repository variables and secrets driven by config/environments-variables.csv
+# Dynamically resolves Azure credentials (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) from azure_service_principals
 # ---------------------------------------------------------------------------------------------------------------------
 
-# 1. Repository-Level Azure OIDC Credentials (Requirement 7)
-resource "github_actions_variable" "azure_client_id" {
-  for_each = {
-    for repo in var.repositories : repo => (
-      lookup(var.azure_credentials.client_ids, repo, var.azure_credentials.client_id)
-    ) if (lookup(var.azure_credentials.client_ids, repo, var.azure_credentials.client_id) != "")
-  }
-
-  repository    = each.key
-  variable_name = "AZURE_CLIENT_ID"
-  value         = each.value
-}
-
-resource "github_actions_variable" "azure_tenant_id" {
-  for_each = {
-    for repo in var.repositories : repo => var.azure_credentials.tenant_id
-    if var.azure_credentials.tenant_id != ""
-  }
-
-  repository    = each.key
-  variable_name = "AZURE_TENANT_ID"
-  value         = each.value
-}
-
-resource "github_actions_variable" "azure_subscription_id" {
-  for_each = {
-    for repo in var.repositories : repo => var.azure_credentials.subscription_id
-    if var.azure_credentials.subscription_id != ""
-  }
-
-  repository    = each.key
-  variable_name = "AZURE_SUBSCRIPTION_ID"
-  value         = each.value
-}
-
-# 2. Filter CSV Configurations into distinct typed sets
 locals {
-  environment_variables = {
-    for k, v in var.environments_variables : k => v
-    if (v.keytype == "variable" || v.keytype == "var") && v.environment != ""
+  # Resolve value dynamically based on type (azure_credential vs plaintext)
+  resolved_variables = {
+    for k, v in var.environments_variables : k => merge(v, {
+      resolved_value = (
+        v.type == "azure_credential" ? (
+          v.key == "AZURE_TENANT_ID" ? var.azure_credentials.tenant_id : (
+            v.key == "AZURE_SUBSCRIPTION_ID" ? var.azure_credentials.subscription_id : (
+              v.key == "AZURE_CLIENT_ID" ? (
+                lookup(var.azure_credentials.client_ids, v.sp_name, var.azure_credentials.client_id)
+              ) : lookup(var.azure_credentials.client_ids, v.sp_name, v.value)
+            )
+          )
+        ) : v.value
+      )
+    })
   }
 
-  environment_secrets = {
-    for k, v in var.environments_variables : k => v
-    if (v.keytype == "secret" || v.keytype == "secrete") && v.environment != ""
+  # Repository-level variables (env_or_repo == "repo")
+  repo_variables = {
+    for k, v in local.resolved_variables : k => v
+    if lower(v.env_or_repo) == "repo" && !can(regex("secret", v.type))
   }
 
-  repository_variables = {
-    for k, v in var.environments_variables : k => v
-    if (v.keytype == "variable" || v.keytype == "var") && v.environment == ""
+  # Repository-level secrets (env_or_repo == "repo" and type includes "secret")
+  repo_secrets = {
+    for k, v in local.resolved_variables : k => v
+    if lower(v.env_or_repo) == "repo" && can(regex("secret", v.type))
   }
 
-  repository_secrets = {
-    for k, v in var.environments_variables : k => v
-    if (v.keytype == "secret" || v.keytype == "secrete") && v.environment == ""
+  # Environment-level variables (env_or_repo != "repo")
+  env_variables = {
+    for k, v in local.resolved_variables : k => v
+    if lower(v.env_or_repo) != "repo" && !can(regex("secret", v.type))
+  }
+
+  # Environment-level secrets (env_or_repo != "repo" and type includes "secret")
+  env_secrets = {
+    for k, v in local.resolved_variables : k => v
+    if lower(v.env_or_repo) != "repo" && can(regex("secret", v.type))
   }
 }
 
-# 3. Environment Variables (Plaintext / Non-secret)
-resource "github_actions_environment_variable" "this" {
-  for_each = local.environment_variables
+# 1. Repository-Level Variables
+resource "github_actions_variable" "repo_variable" {
+  for_each = local.repo_variables
 
   repository    = each.value.repo
-  environment   = each.value.environment
   variable_name = each.value.key
-  value         = each.value.value
+  value         = each.value.resolved_value
 }
 
-# 4. Environment Secrets (Reference resolved or masked)
-resource "github_actions_environment_secret" "this" {
-  for_each = local.environment_secrets
+# 2. Repository-Level Secrets
+resource "github_actions_secret" "repo_secret" {
+  for_each = local.repo_secrets
 
   repository      = each.value.repo
-  environment     = each.value.environment
   secret_name     = each.value.key
-  plaintext_value = each.value.valuetype == "reference" ? lookup(var.secret_references, each.value.value, each.value.value) : each.value.value
+  plaintext_value = each.value.resolved_value
 }
 
-# 5. Repository-level Variables
-resource "github_actions_variable" "this" {
-  for_each = local.repository_variables
+# 3. Environment-Level Variables
+resource "github_actions_environment_variable" "env_variable" {
+  for_each = local.env_variables
 
   repository    = each.value.repo
+  environment   = each.value.env_or_repo
   variable_name = each.value.key
-  value         = each.value.value
+  value         = each.value.resolved_value
 }
 
-# 6. Repository-level Secrets
-resource "github_actions_secret" "this" {
-  for_each = local.repository_secrets
+# 4. Environment-Level Secrets
+resource "github_actions_environment_secret" "env_secret" {
+  for_each = local.env_secrets
 
   repository      = each.value.repo
+  environment     = each.value.env_or_repo
   secret_name     = each.value.key
-  plaintext_value = each.value.valuetype == "reference" ? lookup(var.secret_references, each.value.value, each.value.value) : each.value.value
+  plaintext_value = each.value.resolved_value
 }

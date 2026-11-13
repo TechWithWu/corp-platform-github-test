@@ -71,38 +71,26 @@ corp-platform-github,dev,false,false,0,"",""
 ```
 
 ### 3. `config/environments-variables.csv`
-Defines GitHub environment and repository variables and secrets. Secrets use references rather than plaintext:
+Defines GitHub environment and repository variables and secrets with dynamic Azure credential resolution:
 ```csv
-repo,environment,keytype,valuetype,key,value
-corp-platform-github,prod,variable,plaintext,TF_LOG,INFO
-corp-platform-github,prod,secret,reference,DATABASE_PASSWORD,kv-secret-corp-github-db-pwd
-corp-platform-github,dev,variable,plaintext,TF_LOG,DEBUG
+repo,env_or_repo,key,value,type,sp_name
+corp-platform-github,repo,AZURE_TENANT_ID,,azure_credential,sp-proj001-platform
+corp-platform-github,prod,AZURE_CLIENT_ID,,azure_credential,sp-proj001-platform
+corp-platform-github,prod,AZURE_SUBSCRIPTION_ID,,azure_credential,sp-proj001-platform
+corp-platform-github,prod,env,prod,plaintext,
+corp-platform-github,dev,AZURE_TENANT_ID,,azure_credential,sp-proj001-platformdev
+corp-platform-github,dev,AZURE_CLIENT_ID,,azure_credential,sp-proj001-platformdev
+corp-platform-github,dev,AZURE_SUBSCRIPTION_ID,,azure_credential,sp-proj001-platformdev
+corp-platform-github,dev,env,dev,plaintext,
+myapp-api,repo,AZURE_TENANT_ID,,azure_credential,sp-proj001-platform
+myapp-api,repo,AZURE_CLIENT_ID,,azure_credential,sp-proj001-platform
+myapp-api,repo,AZURE_SUBSCRIPTION_ID,,azure_credential,sp-proj001-platform
+myapp-api,repo,env,dev,plaintext,
 ```
 
-### 4. `config/azure-identity/service_principals.csv`
-Defines Azure AD Applications and Service Principals:
-```csv
-name,owner_team,purpose
-sp-github-actions-bootstrap,platform-team,delegates roles only
-sp-proj001-platform,platform-team,provisions proj001 infrastructure
-sp-proj001-webapi,proj001-team,deploys webapi code to App Service only
-```
-
-### 5. `config/azure-identity/rbac.csv`
-Defines Azure RBAC role assignments:
-```csv
-sp_name,scope_type,scope_ref,role_definition_name,condition_mode,principal_type,description
-sp-github-actions-bootstrap,management_group,/providers/Microsoft.Management/managementGroups/mg-platform,Role Based Access Control Administrator,exclude_privileged,ServicePrincipal,bootstrap delegates non-privileged roles
-```
-
-### 6. `config/azure-identity/federated_credentials.csv`
-Defines GitHub Actions OIDC federated identity credentials:
-```csv
-sp_name,repo_name,environment,subject_type
-sp-github-actions-bootstrap,myapp-api,prod,environment
-sp-github-actions-bootstrap,myapp-api,dev,environment
-sp-github-actions-bootstrap,myapp-api,pull_request,pull_request
-```
+- When `type == "azure_credential"`, `AZURE_CLIENT_ID` is resolved from `sp_name`, and `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` are resolved from Azure client configurations.
+- When `type == "plaintext"`, values are stored directly from the `value` column.
+- Scope: `env_or_repo = "repo"` attaches variables at the repository level; setting `env_or_repo` to an environment name (`dev`, `prod`, etc.) creates environment-level variables.
 
 ---
 
@@ -110,11 +98,12 @@ sp-github-actions-bootstrap,myapp-api,pull_request,pull_request
 
 Preconditions configured via `terraform_data` run during `terraform plan` to catch configuration errors and typos before changes can be applied:
 
+- **Variable Uniqueness**: Each `(repo, env_or_repo, key)` combination in `environments-variables.csv` must be strictly unique; plan will fail with a clear error message if duplicates are detected.
 - **Repository Names**: All repository names referenced across `environments.csv`, `branch_protection.csv`, `repos-team/*.csv`, `environments-variables.csv`, and `federated_credentials.csv` must exist in `repositories.csv`.
-- **Environment Names**: Only `dev`, `qa`, `test`, and `prod` are permitted in `environments.csv` and `environments-variables.csv`.
+- **Environment Names**: Only `dev`, `qa`, `test`, and `prod` are permitted in `environments.csv` and `environments-variables.csv` (or `repo`).
 - **Branch Names**: Only `main` and `develop` are allowed in `branch_protection.csv`.
 - **Team Members & Teams**: All team names in `team-members/*.csv` and `repos-team/*.csv` must exist in `teams.csv`. All usernames in `team-members/*.csv` must exist in `members.csv`.
-- **Azure Identity**: All `sp_name` entries in `rbac.csv` and `federated_credentials.csv` must exist in `service_principals.csv`. Environments in `federated_credentials.csv` must be allowed values (`dev`, `qa`, `test`, `prod`, `pull_request`).
+- **Azure Identity**: All `sp_name` entries in `rbac.csv`, `federated_credentials.csv`, and `environments-variables.csv` must exist in `service_principals.csv`. Environments in `federated_credentials.csv` must be allowed values (`dev`, `qa`, `test`, `prod`, `pull_request`).
 
 ---
 

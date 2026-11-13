@@ -27,10 +27,3 @@ variable "azure_subscription_id" {
   description = "Azure Subscription ID. If null, inferred from azurerm client config."
   default     = null
 }
-
-variable "secret_references" {
-  type        = map(string)
-  description = "Mapping of secret reference names to actual secret values (e.g., from Azure Key Vault or CI secrets)"
-  default     = {}
-  sensitive   = true
-}
