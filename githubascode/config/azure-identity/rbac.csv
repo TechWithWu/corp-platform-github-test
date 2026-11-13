@@ -1,6 +1,6 @@
 sp_name,scope_type,scope_ref,role_definition_name,condition_mode,principal_type,description
-sp-github-actions-bootstrap,management_group,/providers/Microsoft.Management/managementGroups/mg-platform,Role Based Access Control Administrator,exclude_privileged,ServicePrincipal,bootstrap delegates non-privileged roles
-sp-proj001-platform,subscription,/subscriptions/11111111-...,Contributor,,ServicePrincipal,builds RG/VNet/ASP/WebApp/AKS
-sp-proj001-platform,resource_group,/subscriptions/11111111-.../resourceGroups/rg-tfstate-prod,Storage Blob Data Contributor,,ServicePrincipal,reads writes platform tfstate
-sp-proj001-webapi,resource_group,/subscriptions/11111111-.../resourceGroups/rg-proj001-prod,Website Contributor,,ServicePrincipal,push code + restart + swap slot
-sp-proj001-webapi,resource_group,/subscriptions/11111111-.../resourceGroups/rg-tfstate-prod,Storage Blob Data Contributor,,ServicePrincipal,reads writes app tfstate (if app owns resources via TF)
+sp-github-actions-bootstrap,management_group,/providers/Microsoft.Management/managementGroups/corp-platform-root-group,Role Based Access Control Administrator,exclude_privileged,ServicePrincipal,bootstrap delegates non-privileged roles
+sp-proj001-platform,subscription,/subscriptions/c5c80e22-450e-430a-b952-42a8b9307812,Contributor,,ServicePrincipal,builds RG/VNet/ASP/WebApp/AKS
+sp-proj001-platform,resource_group,/subscriptions/c5c80e22-450e-430a-b952-42a8b9307812,Storage Blob Data Contributor,,ServicePrincipal,reads writes platform tfstate
+sp-proj001-webapi,resource_group,/subscriptions/c5c80e22-450e-430a-b952-42a8b9307812,Website Contributor,,ServicePrincipal,push code + restart + swap slot
+sp-proj001-webapi,resource_group,/subscriptions/c5c80e22-450e-430a-b952-42a8b9307812,Storage Blob Data Contributor,,ServicePrincipal,reads writes app tfstate (if app owns resources via TF)
