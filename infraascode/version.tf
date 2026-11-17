@@ -3,36 +3,26 @@
 ###############################################################################
 
 terraform {
-  required_version = "~> 1.17"
+  required_version = ">= 1.9, < 2.0"
 
   backend "azurerm" {
     use_oidc = true
   }
 
   required_providers {
-    alz = {
-      source  = "Azure/alz"
-      version = "~> 0.22.1"
-    }
-
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 4.35"
     }
 
     azapi = {
-      source  = "azure/azapi"
+      source  = "Azure/azapi"
       version = "~> 2.12"
     }
 
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"
-    }
-
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.9"
     }
   }
 }
