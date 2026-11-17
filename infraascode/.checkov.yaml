@@ -1,0 +1,3 @@
+# .checkov.yaml
+skip-check:
+  - CKV_TF_1 # Allow Terraform Registry modules with version constraints and lockfile

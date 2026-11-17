@@ -1,0 +1,6 @@
+{
+  "name": "DayFlow - Minimalist Single Page Focus & Task Hub",
+  "description": "A clean, self-contained single-page productivity app featuring daily task planning, a Pomodoro focus timer, ambient focus sound, and an autosaving scratchpad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
