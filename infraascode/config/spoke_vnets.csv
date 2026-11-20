@@ -1,0 +1,2 @@
+spoke_name,remote_virtual_network_id,allow_forwarded_traffic,allow_gateway_transit,use_remote_gateways,allow_virtual_network_access
+#example-finance,/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-finance/providers/Microsoft.Network/virtualNetworks/vnet-bu-finance,true,false,false,true

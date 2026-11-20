@@ -1,3 +1,5 @@
-environment                 = "dev"
-management_resource_group   = "rg-corp-platform-management-dev"
-log_analytics_workspace_sku = "Free"
+environment      = "dev"
+location         = "swedencentral"
+enable_telemetry = false
+hub_vnet_name    = "vnet-platform-connectivity-dev"
+hub_vnet_cidr    = "10.0.0.0/16"

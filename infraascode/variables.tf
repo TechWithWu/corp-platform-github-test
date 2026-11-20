@@ -1,22 +1,22 @@
 ###############################################################################
-# Input Variables
+# Input Variables - Connectivity Hub
 ###############################################################################
 
 variable "environment" {
-  description = "Target deployment environment (e.g., dev, test, prod)."
+  description = "Target deployment environment (e.g., dev, test, stage, prod)."
   type        = string
-  default     = "nonprod"
+  default     = "dev"
 
   validation {
-    condition     = contains(["dev", "development", "test", "stage", "staging", "nonprod", "prod", "production"], lower(var.environment))
-    error_message = "The environment variable must be a recognized tier (e.g., dev, test, staging, nonprod, prod)."
+    condition     = contains(["dev", "development", "test", "stage", "staging", "nonprod", "prod", "production", "demo"], lower(var.environment))
+    error_message = "The environment variable must be a recognized tier (e.g., dev, test, staging, prod, demo)."
   }
 }
 
 variable "location" {
-  description = "Default Azure region for resources and ALZ management artifacts."
+  description = "Azure region where the Connectivity Hub resources will be provisioned."
   type        = string
-  default     = "centralus"
+  default     = "swedencentral"
 }
 
 variable "enable_telemetry" {
@@ -25,26 +25,44 @@ variable "enable_telemetry" {
   default     = false
 }
 
-variable "management_resource_group" {
-  description = "Name of the Azure Resource Group hosting management resources."
+variable "hub_vnet_name" {
+  description = "Name of the centralized Hub Virtual Network."
   type        = string
-  default     = "rg-corp-platform-management"
+  default     = "vnet-platform-connectivity"
 }
 
-variable "log_analytics_workspace_name" {
-  description = "Name of the Log Analytics Workspace."
+variable "hub_vnet_cidr" {
+  description = "Address space for the centralized Hub Virtual Network in CIDR notation."
   type        = string
-  default     = "corp-platform-log-analytics-workspace"
+  default     = "10.0.0.0/16"
 }
 
-variable "log_analytics_workspace_sku" {
-  description = "The SKU for the Log Analytics Workspace. Defaults to 'Free' (cheapest) for non-prod. Production environments automatically resolve to 'PerGB2018' (moderate cost) unless explicitly overridden."
+variable "firewall_subnet_cidr" {
+  description = "Address prefix for AzureFirewallSubnet (MUST be /26 or larger)."
   type        = string
-  default     = "Free"
+  default     = "10.0.100.0/26"
 }
 
-variable "automation_account_name" {
-  description = "Name of the Azure Automation account for management tasks."
+variable "firewall_management_subnet_cidr" {
+  description = "Address prefix for AzureFirewallManagementSubnet (MUST be /26 or larger, required for Basic SKU)."
   type        = string
-  default     = "corp-automation"
+  default     = "10.0.101.0/26"
+}
+
+variable "hub_shared_subnet_cidr" {
+  description = "Address prefix for the Hub shared services/management subnet."
+  type        = string
+  default     = "10.0.1.0/24"
+}
+
+variable "resource_group_name" {
+  description = "Custom name for the Hub resource group. If omitted, a standard name with random suffix will be generated."
+  type        = string
+  default     = ""
+}
+
+variable "custom_tags" {
+  description = "Additional tags to apply to all resources."
+  type        = map(string)
+  default     = {}
 }
