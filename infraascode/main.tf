@@ -36,6 +36,8 @@ module "connectivity_hub_and_spoke" {
 
   enable_telemetry = var.enable_telemetry
 
+  location = module.resource_group.resource.location
+
   hub_and_spoke_networks_settings = {
     enabled_resources = {
       ddos_protection_plan = false
@@ -47,8 +49,8 @@ module "connectivity_hub_and_spoke" {
       ########## Hub VNet ##########
       hub_virtual_network = {
         name                            = local.hub_name
-        location                        = module.resource_group.location
-        resource_group_name             = module.resource_group.name
+        location                        = module.resource_group.resource.location
+        resource_group_name             = module.resource_group.resource.name
         resource_group_creation_enabled = false
         address_space                   = [local.hub_cidr]
 
@@ -72,6 +74,8 @@ module "connectivity_hub_and_spoke" {
         }
       }
 
+      default_parent_id = module.resource_group.resource.id
+      location             = module.resource_group.resource.location
       bastion              = { enabled = false }
       private_dns_zones    = null
       private_dns_resolver = null
@@ -90,6 +94,6 @@ module "spoke_peering" {
   source = "./modules/spoke_peering"
 
   hub_virtual_network_name = local.hub_name
-  hub_resource_group_name  = module.resource_group.name
+  hub_resource_group_name  = module.resource_group.resource.name
   spoke_peers              = local.spoke_peers
 }

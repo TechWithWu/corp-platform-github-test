@@ -40,7 +40,7 @@ locals {
       allow_virtual_network_access = try(tobool(row.allow_virtual_network_access), true)
     }
     if trimspace(lookup(row, "remote_virtual_network_id", "")) != ""
-       && !startswith(trimspace(lookup(row, "spoke_name", "")), "#")
-       && !can(regex("(?i)example|placeholder|<.*>", lookup(row, "remote_virtual_network_id", "")))
+    && !startswith(trimspace(lookup(row, "spoke_name", "")), "#")
+    && !can(regex("(?i)example|placeholder|<.*>", lookup(row, "remote_virtual_network_id", "")))
   }
 }
