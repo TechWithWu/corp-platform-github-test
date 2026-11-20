@@ -37,18 +37,6 @@ variable "hub_vnet_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "firewall_subnet_cidr" {
-  description = "Address prefix for AzureFirewallSubnet (MUST be /26 or larger)."
-  type        = string
-  default     = "10.0.100.0/26"
-}
-
-variable "firewall_management_subnet_cidr" {
-  description = "Address prefix for AzureFirewallManagementSubnet (MUST be /26 or larger, required for Basic SKU)."
-  type        = string
-  default     = "10.0.101.0/26"
-}
-
 variable "hub_shared_subnet_cidr" {
   description = "Address prefix for the Hub shared services/management subnet."
   type        = string

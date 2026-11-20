@@ -3,21 +3,33 @@
 This repository provisions and manages the centralized **Connectivity Hub** for the Corporate Platform Azure Landing Zone (ALZ) using Microsoft's official Azure Verified Modules (**AVM**):
 - **Hub & Spoke Pattern**: `Azure/avm-ptn-alz-connectivity-hub-and-spoke-vnet/azurerm`
 - **Resource Group**: `Azure/avm-res-resources-resourcegroup/azurerm`
-- **Peering Submodule**: `Azure/avm-res-network-virtualnetwork/azurerm//modules/peering`
+- **Native Peering Submodule**: `./modules/spoke_peering` (powered by `azurerm_virtual_network_peering`)
 
 ---
 
 ## Architecture Overview
 
-The Connectivity Hub serves as the central network transit, inspection, and security foundation for all corporate workloads:
-- **Centralized Hub VNet**: Central routing hub (`10.0.0.0/16`) deployed in the connectivity subscription.
-- **Azure Firewall (Basic SKU)**: Cost-effective centralized egress and ingress firewall inspection.
-  - Basic SKU requires dedicated `/26` subnets: `AzureFirewallSubnet` (`10.0.100.0/26`) and `AzureFirewallManagementSubnet` (`10.0.101.0/26`).
-  - Dual data-plane Public IPs (for SNAT & DNAT) + dedicated management Public IP.
-  - Centralized firewall policy with baseline outbound network rules and Microsoft/Azure updates application rules.
-- **No VPN Gateway**: VPN / Gateway components have been removed to maintain a lean, pure firewall hub architecture.
-- **Decoupled Spoke VNets**: Spoke virtual networks reside in separate application subscriptions and repositories. The hub does not manage spoke lifecycles.
-- **Configurable Spoke Peering Submodule**: As spokes are provisioned, adding a row to `config/spoke_vnets.csv` automatically establishes high-bandwidth, cross-subscription VNet peering to the Hub.
+The Connectivity Hub serves as the central network transit backbone for the corporate cloud platform:
+- **Centralized Hub VNet**: Deployed in the Connectivity subscription (`10.0.0.0/16`), providing shared connectivity and management subnets.
+- **Lean Network Transit Foundation**: Firewall and VPN Gateway components are removed, keeping the hub lightweight, cost-effective, and focused on core routing.
+- **Decoupled Spoke VNets**: Spoke virtual networks reside in separate individual subscriptions and application repositories.
+- **Configurable Hub-Side Peering**: A configurable CSV table (`config/spoke_vnets.csv`) dynamically establishes Hub-to-Spoke peerings as new spokes are deployed across subscriptions.
+
+---
+
+## Least-Privilege Cross-Subscription Peering Model
+
+In enterprise multi-subscription architectures, granting a central pipeline service principal write access across multiple independent spoke subscriptions introduces severe security and blast-radius risks.
+
+To enforce the **Principle of Least Privilege**:
+1. **This Hub Repository (Hub-Side Only)**:
+   - Uses the native `azurerm_virtual_network_peering` resource inside `./modules/spoke_peering`.
+   - Provisions only the local peering from the Hub VNet to the remote Spoke VNet (`peer-hub-to-<spoke>`).
+   - Requires permissions **strictly within the Connectivity Subscription**; it does not require contributor or write access in any spoke subscription.
+2. **Spoke Repositories (Spoke-Side Only)**:
+   - Spoke pipelines independently deploy their own reciprocal `azurerm_virtual_network_peering` resource from the Spoke VNet to the Hub (`peer-<spoke>-to-hub`) using the Hub VNet Resource ID (`terraform output -raw hub_vnet_id`).
+3. **Automatic Connection**:
+   - Once both halves of the peering are established, Azure automatically marks the peering status as **`Connected`**, completing bidirectional communication.
 
 ---
 
@@ -26,7 +38,7 @@ The Connectivity Hub serves as the central network transit, inspection, and secu
 ```text
 infraascode/
 ├── config/
-│   ├── README.md                   # Instructions for spoke registration
+│   ├── README.md                   # Instructions for spoke registration & architecture
 │   └── spoke_vnets.csv             # Configurable CSV table of peered spoke VNets
 ├── env/
 │   ├── dev/
@@ -36,16 +48,16 @@ infraascode/
 │       ├── backend.hcl             # Remote state backend configuration for Prod
 │       └── terraform.tfvars        # Environment input variables for Prod
 ├── modules/
-│   └── spoke_peering/              # Submodule for managing Hub <-> Spoke peerings
-│       ├── main.tf                 # AVM VNet peering module instantiation
-│       ├── outputs.tf              # Peering IDs and names outputs
-│       ├── variables.tf            # Submodule inputs (hub ID & spoke map)
+│   └── spoke_peering/              # Submodule for managing Hub-side VNet peerings
+│       ├── main.tf                 # Native azurerm_virtual_network_peering resource
+│       ├── outputs.tf              # Peering IDs and spoke names outputs
+│       ├── variables.tf            # Submodule inputs (hub name, RG, spoke map)
 │       └── version.tf              # Provider constraints for peering module
 ├── .checkov.yaml                   # Policy-as-code and static analysis rules
 ├── data.tf                         # Client configurations and data sources
 ├── locals.tf                       # Local computations, tagging, and CSV parser
 ├── main.tf                         # Root orchestration & hub module
-├── outputs.tf                      # Hub VNet ID, Firewall private/public IPs
+├── outputs.tf                      # Hub VNet ID, Hub VNet Name, peered spokes
 ├── provider.tf                     # azurerm & azapi provider configurations (OIDC)
 ├── variables.tf                    # Variable definitions, types, and validations
 └── version.tf                      # Terraform and provider version constraints
@@ -55,7 +67,7 @@ infraascode/
 
 ## Managing Spoke Virtual Network Peerings
 
-Spoke VNets are hosted in other individual subscriptions and repositories. To establish a peering connection with this Hub:
+Spoke VNets are hosted in separate subscription repositories. To establish a peering connection with this Hub:
 
 1. **Deploy your Spoke VNet** in its respective subscription repository.
 2. Open `infraascode/config/spoke_vnets.csv`.
@@ -63,28 +75,14 @@ Spoke VNets are hosted in other individual subscriptions and repositories. To es
 
 ```csv
 spoke_name,remote_virtual_network_id,allow_forwarded_traffic,allow_gateway_transit,use_remote_gateways,allow_virtual_network_access
-spoke-finance,/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-finance/providers/Microsoft.Network/virtualNetworks/vnet-finance,true,false,false,true
+spoke-finance,/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/rg-finance-prod/providers/Microsoft.Network/virtualNetworks/vnet-finance,true,false,false,true
+spoke-eshop,/subscriptions/66666666-7777-8888-9999-000000000000/resourceGroups/rg-eshop-prod/providers/Microsoft.Network/virtualNetworks/vnet-eshop,true,false,false,true
 ```
 
-4. Run `terraform plan` and `terraform apply`. The submodule (`modules/spoke_peering`) will automatically create the peering!
+4. Run `terraform plan` and `terraform apply`. The submodule (`modules/spoke_peering`) will provision the Hub-side peering.
+5. In the Spoke subscription repository, configure the reciprocal Spoke-to-Hub peering targeting the Hub VNet ID (obtained via `terraform output -raw hub_vnet_id`).
 
-> **Note**: Comment lines starting with `#` and empty placeholder entries are safely ignored by the CSV parser.
-
----
-
-## Routing Spoke Traffic via Central Firewall
-
-In the Spoke subscription repositories, workloads should route their outbound internet traffic (`0.0.0.0/0`) through this Hub's Azure Firewall.
-
-Retrieve the Firewall private IP from the Terraform output:
-```bash
-terraform output -raw firewall_private_ip
-```
-
-Then create a User-Defined Route (UDR) in the spoke's route table:
-- **Prefix**: `0.0.0.0/0`
-- **Next Hop Type**: `VirtualAppliance`
-- **Next Hop IP Address**: `<firewall_private_ip>`
+> **Note**: Comment lines starting with `#` and empty placeholder entries are safely ignored by the CSV parser in `locals.tf`.
 
 ---
 
@@ -93,7 +91,7 @@ Then create a User-Defined Route (UDR) in the spoke's route table:
 ### Prerequisites
 - Terraform `>= 1.9, < 2.0`
 - Azure CLI `>= 2.50.0`
-- Contributor access to the Connectivity Subscription
+- Contributor access to the Connectivity Subscription (OIDC enabled)
 
 ### 1. Development Deployment
 ```bash
@@ -134,9 +132,9 @@ terraform apply -var-file=env/prod/terraform.tfvars
 | `enable_telemetry` | `bool` | `false` | Enable AVM telemetry via `modtm`. |
 | `hub_vnet_name` | `string` | `"vnet-platform-connectivity"` | Name of the central Hub VNet. |
 | `hub_vnet_cidr` | `string` | `"10.0.0.0/16"` | Address space for the Hub VNet. |
-| `firewall_subnet_cidr` | `string` | `"10.0.100.0/26"` | Subnet CIDR for `AzureFirewallSubnet` (/26). |
-| `firewall_management_subnet_cidr` | `string` | `"10.0.101.0/26"` | Subnet CIDR for `AzureFirewallManagementSubnet` (/26). |
 | `hub_shared_subnet_cidr` | `string` | `"10.0.1.0/24"` | Shared services subnet in the Hub. |
+| `resource_group_name` | `string` | `""` | Optional custom name for the Hub resource group. |
+| `custom_tags` | `map(string)` | `{}` | Additional tags to apply to all resources. |
 
 ---
 
@@ -144,8 +142,9 @@ terraform apply -var-file=env/prod/terraform.tfvars
 
 | Name | Description |
 | :--- | :--- |
-| `hub_vnet_id` | Full Resource ID of the central Hub VNet. |
-| `firewall_private_ip` | Private IP of Azure Firewall (used as next-hop UDR for spokes). |
-| `firewall_public_ips` | Public IPs allocated to the Firewall. |
-| `hub_route_table_id` | Resource ID of the Hub user subnets route table. |
-| `peered_spoke_vnets` | List of active spoke VNets peered from `config/spoke_vnets.csv`. |
+| `resource_group_id` | Resource ID of the Connectivity Hub resource group. |
+| `resource_group_name` | Name of the Connectivity Hub resource group. |
+| `resource_group_location` | Azure region of the Connectivity Hub. |
+| `hub_vnet_id` | Full Resource ID of the centralized Hub VNet. |
+| `hub_vnet_name` | Name of the centralized Hub VNet. |
+| `peered_spoke_vnets` | List of active spoke VNets configured for Hub-side peering. |

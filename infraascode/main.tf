@@ -1,6 +1,6 @@
 ###############################################################################
 # Centralized Connectivity Hub
-# Manages the primary Hub VNet, Azure Firewall (Basic SKU), and Spoke Peerings
+# Manages the primary Hub VNet and Hub-Side Spoke Peerings
 ###############################################################################
 
 ###############################################################################
@@ -27,19 +27,8 @@ module "resource_group" {
 }
 
 ###############################################################################
-# Dedicated 2nd Data-Plane Public IP for Azure Firewall
-###############################################################################
-resource "azurerm_public_ip" "fw_data_2" {
-  name                = "pip-fw-data-2-${random_string.suffix.result}"
-  location            = module.resource_group.location
-  resource_group_name = module.resource_group.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-  tags                = local.common_tags
-}
-
-###############################################################################
-# HUB – AVM ALZ Connectivity Pattern Module (Firewall Basic SKU)
+# HUB – AVM ALZ Connectivity Pattern Module
+# Provisions the centralized Hub Virtual Network (Firewall & VPN disabled)
 ###############################################################################
 module "connectivity_hub_and_spoke" {
   source  = "Azure/avm-ptn-alz-connectivity-hub-and-spoke-vnet/azurerm"
@@ -65,109 +54,15 @@ module "connectivity_hub_and_spoke" {
 
         subnets = {
           hub_shared = {
-            name                      = "snet-hub-shared"
-            address_prefixes          = [local.hub_mgmt_cidr]
-            route_table_key_reference = "hub_user_subnets"
-          }
-        }
-
-        ########## Azure Firewall (Basic SKU) ##########
-        # Basic SKU requires:
-        # - AzureFirewallSubnet (/26)
-        # - AzureFirewallManagementSubnet (/26)
-        firewall = {
-          sku_name                         = "AZFW_VNet"
-          sku_tier                         = "Basic"
-          subnet_address_prefix            = local.fw_subnet_cidr
-          management_subnet_address_prefix = local.fw_mgmt_cidr
-
-          ip_configurations = {
-            primary = {
-              is_default                 = true
-              public_ip_creation_enabled = true
-              public_ip_name             = "pip-fw-data-1-${random_string.suffix.result}"
-              public_ip_configuration = {
-                sku               = "Standard"
-                allocation_method = "Static"
-                zones             = []
-              }
-            }
-            secondary = {
-              is_default                 = false
-              public_ip_creation_enabled = false
-              public_ip_id               = azurerm_public_ip.fw_data_2.id
-            }
-          }
-
-          management_ip_configuration = {
-            public_ip_creation_enabled = true
-            public_ip_name             = "pip-fw-mgmt-${random_string.suffix.result}"
-            public_ip_configuration = {
-              sku               = "Standard"
-              allocation_method = "Static"
-              zones             = []
-            }
-          }
-        }
-
-        ########## Firewall Policy & Baseline Rules ##########
-        firewall_policy = {
-          sku = "Basic"
-          base_policy = {
-            rule_collection_groups = {
-              default = {
-                priority = 100
-
-                # 1. Outbound Network Rules
-                network_rule_collections = {
-                  outbound_internet = {
-                    priority = 300
-                    action   = "Allow"
-                    rules = {
-                      workloads_to_internet = {
-                        protocols             = ["TCP", "UDP"]
-                        source_addresses      = [local.hub_cidr, "10.0.0.0/8"]
-                        destination_addresses = ["*"]
-                        destination_ports     = ["80", "443", "53", "123"]
-                      }
-                    }
-                  }
-                }
-
-                # 2. Application Rules (Core Azure / Microsoft services)
-                application_rule_collections = {
-                  allow_fqdn = {
-                    priority = 400
-                    action   = "Allow"
-                    rules = {
-                      ms_and_azure = {
-                        source_addresses = [local.hub_cidr, "10.0.0.0/8"]
-                        protocols        = [{ type = "Https", port = 443 }]
-                        fqdn_tags        = ["WindowsUpdate", "AzureActiveDirectory"]
-                        target_fqdns     = ["*.azure.com", "*.microsoft.com"]
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        ########## Routing: Route Table pointing default traffic to Firewall ##########
-        route_table_name_user_subnets = "rt-hub-user-subnets-${random_string.suffix.result}"
-        route_table_entries_user_subnets = {
-          default_via_firewall = {
-            address_prefix         = "0.0.0.0/0"
-            next_hop_type          = "VirtualAppliance"
-            next_hop_in_ip_address = "use_firewall_private_ip"
+            name             = "snet-hub-shared"
+            address_prefixes = [local.hub_mgmt_cidr]
           }
         }
 
         ########## Enabled / Disabled Hub Components ##########
-        # VPN Gateway removed; only Firewall enabled
+        # Firewall and VPN Gateway removed
         enabled_resources = {
-          firewall                = true
+          firewall                = false
           nat_gateway             = false
           bastion                 = false
           virtual_network_gateway = false
@@ -188,11 +83,13 @@ module "connectivity_hub_and_spoke" {
 
 ###############################################################################
 # Spoke Virtual Network Peering Submodule
-# Dynamically manages peerings for spokes listed in config/spoke_vnets.csv
+# Uses native azurerm_virtual_network_peering to establish Hub-side peering
+# without requiring cross-subscription write permissions on spoke subscriptions
 ###############################################################################
 module "spoke_peering" {
   source = "./modules/spoke_peering"
 
-  hub_virtual_network_id = module.connectivity_hub_and_spoke.virtual_network_resource_ids["primary"]
-  spoke_peers            = local.spoke_peers
+  hub_virtual_network_name = local.hub_name
+  hub_resource_group_name  = module.resource_group.name
+  spoke_peers              = local.spoke_peers
 }

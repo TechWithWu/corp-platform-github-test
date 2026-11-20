@@ -2,13 +2,18 @@
 # Spoke Peering Submodule Variables
 ###############################################################################
 
-variable "hub_virtual_network_id" {
-  description = "The Azure Resource ID of the centralized Hub Virtual Network."
+variable "hub_virtual_network_name" {
+  description = "The name of the centralized Hub Virtual Network."
+  type        = string
+}
+
+variable "hub_resource_group_name" {
+  description = "The name of the Resource Group hosting the Hub Virtual Network."
   type        = string
 }
 
 variable "spoke_peers" {
-  description = "Map of spoke virtual network configurations for establishing peering connections with the Hub."
+  description = "Map of spoke virtual network configurations for establishing Hub-to-Spoke peering."
   type = map(object({
     spoke_name                   = string
     remote_virtual_network_id    = string

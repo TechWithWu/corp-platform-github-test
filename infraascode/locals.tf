@@ -20,11 +20,9 @@ locals {
   )
 
   # Network CIDRs
-  hub_name       = var.hub_vnet_name
-  hub_cidr       = var.hub_vnet_cidr
-  fw_subnet_cidr = var.firewall_subnet_cidr
-  fw_mgmt_cidr   = var.firewall_management_subnet_cidr
-  hub_mgmt_cidr  = var.hub_shared_subnet_cidr
+  hub_name      = var.hub_vnet_name
+  hub_cidr      = var.hub_vnet_cidr
+  hub_mgmt_cidr = var.hub_shared_subnet_cidr
 
   # Read and parse CSV configuration for spoke virtual networks
   spoke_vnets_csv = fileexists("${path.module}/config/spoke_vnets.csv") ? csvdecode(file("${path.module}/config/spoke_vnets.csv")) : []
