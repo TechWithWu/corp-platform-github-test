@@ -18,7 +18,7 @@ resource "random_string" "suffix" {
 ###############################################################################
 module "resource_group" {
   source  = "Azure/avm-res-resources-resourcegroup/azurerm"
-  version = "0.2.0"
+  version = "0.5.0"
 
   name             = local.rg_name
   location         = local.location
@@ -32,7 +32,7 @@ module "resource_group" {
 ###############################################################################
 module "connectivity_hub_and_spoke" {
   source  = "Azure/avm-ptn-alz-connectivity-hub-and-spoke-vnet/azurerm"
-  version = "~> 0.18.3"
+  version = "~> 0.18.4"
 
   enable_telemetry = var.enable_telemetry
 

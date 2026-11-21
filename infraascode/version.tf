@@ -1,18 +1,14 @@
-###############################################################################
-# Terraform & Provider Requirements
-###############################################################################
-
 terraform {
   required_version = ">= 1.9, < 2.0"
 
-  backend "azurerm" {
-    use_oidc = true
-  }
+  # backend "azurerm" {
+  #   use_oidc = true
+  # }
 
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.21"
+      version = "~> 4.62"
     }
 
     azapi = {
@@ -20,9 +16,19 @@ terraform {
       version = "~> 2.12"
     }
 
+    modtm = {
+      source  = "Azure/modtm"
+      version = "~> 0.3"
+    }
+
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.6"
+      version = "~> 3.9"
+    }
+
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
     }
   }
 }

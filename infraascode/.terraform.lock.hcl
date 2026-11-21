@@ -19,7 +19,7 @@ provider "registry.terraform.io/azure/modtm" {
 
 provider "registry.terraform.io/hashicorp/azurerm" {
   version     = "4.81.0"
-  constraints = ">= 3.71.0, >= 3.100.0, >= 3.112.0, >= 3.116.0, ~> 4.0, ~> 4.10, ~> 4.21, >= 4.62.0, < 5.0.0"
+  constraints = ">= 3.71.0, >= 3.112.0, >= 3.116.0, ~> 4.0, ~> 4.10, >= 4.62.0, ~> 4.62, < 5.0.0"
   hashes = [
     "h1:4BEgtU/crlkbMduT7tm8Sp3+C+1RBfrpUIlTBM/wtMc=",
     "zh:0732e7b74264ddfa2b90ba69d01c283d3cbae9f72ed3e506c6ac92529fed7fd3",
@@ -39,7 +39,7 @@ provider "registry.terraform.io/hashicorp/azurerm" {
 
 provider "registry.terraform.io/hashicorp/random" {
   version     = "3.9.1"
-  constraints = ">= 3.5.0, ~> 3.5, >= 3.5.1, ~> 3.6, < 4.0.0, < 5.0.0"
+  constraints = ">= 3.5.0, ~> 3.5, >= 3.5.1, ~> 3.6, ~> 3.9, < 4.0.0, < 5.0.0"
   hashes = [
     "h1:7uiStw0Rl9KOdX5UNMG/sp9nyadoD4LZekQTiYlYPhE=",
     "zh:05f4734c1f0be840b711b3eff259ebc5fca436784c728955b1678078466f48d7",
