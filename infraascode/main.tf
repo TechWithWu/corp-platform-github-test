@@ -1,6 +1,6 @@
 ###############################################################################
 # Centralized Connectivity Hub
-# Manages the primary Hub VNet and Hub-Side Spoke Peerings
+# Manages Hub VNets (defined in local.config.tf) and Spoke Peering connections
 ###############################################################################
 
 ###############################################################################
@@ -27,28 +27,25 @@ module "resource_group" {
 }
 
 ###############################################################################
-# HUB – AVM ALZ Connectivity Pattern Module
-# Provisions the centralized Hub Virtual Network (Firewall & VPN disabled)
+# HUB – AVM Virtual Network Module (Extendable)
+# Provisions all Hub Virtual Networks and custom subnets from local.config.tf
 ###############################################################################
 module "hub_vnet" {
+  for_each = local.hub_vnets
+
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
   version = "~> 0.17"
 
-  name           = "vnet-hub-centralus-001"
-  location       = "centralus"
-  address_space  = ["10.0.0.0/16"]
+  name          = each.value.name
+  location      = try(each.value.location, local.location)
+  address_space = each.value.address_space
 
-  # pass the RG resource ID (what you already have)
+  # Pass the RG resource ID
   parent_id = module.resource_group.resource_id
 
-  subnets = {
-    default = {
-      name             = "snet-default"
-      address_prefixes = ["10.0.1.0/24"]
-    }
-  }
+  subnets = each.value.subnets
 
-  enable_telemetry = false
+  enable_telemetry = var.enable_telemetry
   tags             = local.common_tags
 }
 
@@ -57,10 +54,16 @@ module "hub_vnet" {
 # Uses native azurerm_virtual_network_peering to establish Hub-side peering
 # without requiring cross-subscription write permissions on spoke subscriptions
 ###############################################################################
-# module "spoke_peering" {
-#   source = "./modules/spoke_peering"
+module "spoke_peering" {
+  source = "./modules/spoke_peering"
 
-#   hub_virtual_network_name = local.hub_name
-#   hub_resource_group_name  = module.resource_group.resource.name
-#   spoke_peers              = local.spoke_peers
-# }
+  hub_virtual_networks = {
+    for k, v in local.hub_vnets : k => {
+      name                = v.name
+      resource_group_name = local.rg_name
+      id                  = module.hub_vnet[k].resource_id
+    }
+  }
+
+  spoke_peers = local.spoke_peers
+}

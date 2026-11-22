@@ -19,11 +19,6 @@ locals {
     var.custom_tags
   )
 
-  # Network CIDRs
-  hub_name      = var.hub_vnet_name
-  hub_cidr      = var.hub_vnet_cidr
-  hub_mgmt_cidr = var.hub_shared_subnet_cidr
-
   # Read and parse CSV configuration for spoke virtual networks
   spoke_vnets_csv = fileexists("${path.module}/config/spoke_vnets.csv") ? csvdecode(file("${path.module}/config/spoke_vnets.csv")) : []
 
@@ -34,6 +29,7 @@ locals {
     trimspace(row.spoke_name) => {
       spoke_name                   = trimspace(row.spoke_name)
       remote_virtual_network_id    = trimspace(row.remote_virtual_network_id)
+      hub_vnet_key                 = try(trimspace(lookup(row, "hub_vnet_key", "")), "")
       allow_forwarded_traffic      = try(tobool(row.allow_forwarded_traffic), true)
       allow_gateway_transit        = try(tobool(row.allow_gateway_transit), false)
       use_remote_gateways          = try(tobool(row.use_remote_gateways), false)
