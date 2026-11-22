@@ -5,13 +5,13 @@
 locals {
   # Location and naming
   location = var.location
-  rg_name  = var.resource_group_name != "" ? var.resource_group_name : "rg-hub-connectivity-${var.environment}-${random_string.suffix.result}"
+  rg_name  = var.resource_group_name != "" ? var.resource_group_name : "rg-connectivity-hub-${var.environment}"
 
   # Centralized tagging
   common_tags = merge(
     {
       created_by  = "terraform"
-      project     = "Azure Landing Zones"
+      project     = "corp platform connectivity"
       owner       = "avm"
       environment = var.environment
       managed_by  = "terraform"

@@ -10,8 +10,8 @@ locals {
   hub_vnets = {
     # Primary Hub Virtual Network
     "primary" = {
-      name          = "vnet-hub-centralus-001"
-      location      = "centralus"
+      name          = var.hub_vnet_name
+      location      = local.location
       address_space = ["10.0.0.0/16"]
 
       # Distinct subnets configuration for this Hub VNet
