@@ -16,7 +16,7 @@ variable "environment" {
 variable "location" {
   description = "Azure region where the Connectivity Hub resources will be provisioned."
   type        = string
-  default     = "swedencentral"
+  default     = "centralus"
 }
 
 variable "enable_telemetry" {

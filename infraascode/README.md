@@ -51,8 +51,8 @@ locals {
 
     # Example: Adding a secondary regional Hub
     "secondary" = {
-      name          = "vnet-hub-swedencentral-001"
-      location      = "swedencentral"
+      name          = "vnet-hub-centralus-001"
+      location      = "centralus"
       address_space = ["10.10.0.0/16"]
 
       subnets = {
