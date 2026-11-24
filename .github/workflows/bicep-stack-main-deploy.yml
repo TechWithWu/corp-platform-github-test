@@ -6,82 +6,54 @@ on:
       - main
     paths:
       - 'bicep/**'
-      - '.github/workflows/bicep-stack-main-deploy.yml'
+      - '.github/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target deployment environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - dev
 
 permissions:
   id-token: write
   contents: read
-  pull-requests: read
+  pull-requests: write
   actions: read
-
-env:
-  STACK_NAME: financeDeploymentStack
-  LOCATION: centralus
-  TEMPLATE_FILE: bicep/main.bicep
-  PARAMETERS_FILE: bicep/main.prod.bicepparam
-  AOU: deleteAll
-  DENY: denyWriteAndDelete
-  RETENTION: PT1H
 
 jobs:
   verify-and-compare:
+    name: Re-Run What-If & Compare (prod-plan)
     runs-on: ubuntu-latest
+    environment: prod-plan
     outputs:
-      pr_number: ${{ steps.pull_pr_whatif.outputs.pr_number }}
+      pr_number: ${{ steps.pull_pr.outputs.pr_number }}
       has_changes: ${{ steps.compare.outputs.has_changes }}
+      has_pr: ${{ steps.compare.outputs.has_pr }}
+      portal_stack_url: ${{ steps.whatif.outputs.portal_stack_url }}
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
+      - name: Load Environment Configuration
+        run: |
+          chmod +x .github/scripts/*.sh
+          .github/scripts/load-config.sh "${{ inputs.environment || 'prod' }}"
+        env:
+          PIPELINE_SP_OBJECT_ID_OVERRIDE: ${{ vars.PIPELINE_SP_OBJECT_ID }}
+
       - name: Pull PR What-If Result
-        id: pull_pr_whatif
+        id: pull_pr
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-            });
-
-            let prPayload = null;
-            let prNumber = '';
-
-            if (prs.length > 0) {
-              prNumber = String(prs[0].number);
-              const { data: comments } = await github.rest.issues.listComments({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prs[0].number,
-              });
-
-              for (const c of [...comments].reverse()) {
-                if (!c.body) continue;
-                const match = c.body.match(/<!-- WHATIF_B64_START -->([\s\S]*?)<!-- WHATIF_B64_END -->/);
-                if (match && match[1]) {
-                  prPayload = JSON.parse(Buffer.from(match[1].trim(), 'base64').toString('utf8'));
-                  break;
-                }
-              }
-            }
-
-            if (!prPayload) {
-              prPayload = {
-                pr_number: prNumber || null,
-                head_sha: context.sha,
-                whatif_name: '(none)',
-                run_url: '',
-                command: '(No prior PR what-if comment found)',
-                plan: '(No prior PR what-if plan captured)'
-              };
-            }
-
-            fs.writeFileSync('/tmp/pr-whatif-meta.json', JSON.stringify(prPayload, null, 2));
-            fs.writeFileSync('/tmp/pr-whatif.txt', prPayload.plan || '');
-            core.setOutput('pr_number', prNumber);
+            const pullPrPayload = require('./.github/scripts/pull-pr-payload.js');
+            await pullPrPayload({ github, context, core });
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -90,78 +62,22 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Main What-If & Diff Against PR What-If
-        id: compare
-        shell: bash
+      - name: Re-Run Stack What-If Preview
+        id: whatif
         run: |
-          set -euo pipefail
+          .github/scripts/run-whatif.sh
+          cp /tmp/whatif-raw.txt /tmp/main-whatif.txt
+        env:
+          PR_NUMBER: ${{ steps.pull_pr.outputs.pr_number }}
+          HEAD_SHA: ${{ github.sha }}
 
-          SUB_ID=$(az account show --query id -o tsv)
-          PIPELINE_SP_OBJECT_ID="${{ vars.PIPELINE_SP_OBJECT_ID }}"
-          if [ -z "$PIPELINE_SP_OBJECT_ID" ]; then
-            PIPELINE_SP_OBJECT_ID="00000000-0000-0000-0000-000000000000"
-          fi
-
-          STACK_ID="/subscriptions/${SUB_ID}/providers/Microsoft.Resources/deploymentStacks/${{ env.STACK_NAME }}"
-          TS_UTC=$(date -u +"%Y%m%d-%H%M%S-%3N")
-          MAIN_WHATIF_NAME="wi-finance-main-${TS_UTC}-${{ github.run_attempt }}"
-
-          MAIN_CMD="az stack-whatif sub create --name \"${MAIN_WHATIF_NAME}\" --stack-id \"${STACK_ID}\" --location \"${{ env.LOCATION }}\" --template-file \"${{ env.TEMPLATE_FILE }}\" --parameters \"${{ env.PARAMETERS_FILE }}\" --action-on-unmanage \"${{ env.AOU }}\" --deny-settings-mode \"${{ env.DENY }}\" --validation-level \"ProviderNoRbac\" --deny-settings-apply-to-child-scopes --deny-settings-excluded-principals \"${PIPELINE_SP_OBJECT_ID}\" --retention-interval \"${{ env.RETENTION }}\""
-
-          echo "main_whatif_cmd=$MAIN_CMD" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "\$ $MAIN_CMD"
-            echo ""
-            az stack-whatif sub create \
-              --name "${MAIN_WHATIF_NAME}" \
-              --stack-id "${STACK_ID}" \
-              --location "${{ env.LOCATION }}" \
-              --template-file "${{ env.TEMPLATE_FILE }}" \
-              --parameters "${{ env.PARAMETERS_FILE }}" \
-              --action-on-unmanage "${{ env.AOU }}" \
-              --deny-settings-mode "${{ env.DENY }}" \
-              --validation-level "ProviderNoRbac" \
-              --deny-settings-apply-to-child-scopes \
-              --deny-settings-excluded-principals "${PIPELINE_SP_OBJECT_ID}" \
-              --retention-interval "${{ env.RETENTION }}" 2>&1
-          } | tee /tmp/main-whatif.txt
-
-          set +e
-          diff -u /tmp/pr-whatif.txt /tmp/main-whatif.txt > /tmp/whatif-diff.patch
-          DIFF_RC=$?
-          set -e
-
-          if [ "$DIFF_RC" -eq 0 ]; then
-            echo "No differences detected between PR what-if plan and main what-if plan." > /tmp/whatif-diff.patch
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
-          {
-            echo "## 📊 What-If Comparison: PR vs. \`main\` (\`${{ env.STACK_NAME }}\`)"
-            echo ""
-            echo "**Main What-If Name:** \`${MAIN_WHATIF_NAME}\`"
-            echo ""
-            echo "**Main What-If Command:**"
-            echo '```bash'
-            echo "$MAIN_CMD"
-            echo '```'
-            echo ""
-            echo "### Diff (PR What-If -> Main What-If)"
-            echo '```diff'
-            cat /tmp/whatif-diff.patch
-            echo '```'
-            echo ""
-            echo "<details><summary>Full Main What-If Plan</summary>"
-            echo ""
-            echo '```text'
-            cat /tmp/main-whatif.txt
-            echo '```'
-            echo ""
-            echo "</details>"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare What-If & Generate Report
+        id: compare
+        run: |
+          .github/scripts/compare-whatif.sh
+        env:
+          PR_NUMBER: ${{ steps.pull_pr.outputs.pr_number }}
+          PORTAL_STACK_URL: ${{ steps.whatif.outputs.portal_stack_url }}
 
       - name: Upload Comparison & Full Plan Artifacts
         uses: actions/upload-artifact@v4
@@ -172,15 +88,33 @@ jobs:
             /tmp/main-whatif.txt
             /tmp/whatif-diff.patch
             /tmp/pr-whatif-meta.json
+            /tmp/whatif-payload.json
+            /tmp/comparison-summary.md
           retention-days: 14
 
-  deploy-prod:
+      - name: Post Diff Comment on PR (if PR exists)
+        if: steps.pull_pr.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const postPrComment = require('./.github/scripts/post-pr-comment.js');
+            await postPrComment({ github, context, mode: 'main-diff' });
+
+  deploy:
+    name: Deploy Deployment Stack (${{ inputs.environment || 'prod' }})
     needs: verify-and-compare
     runs-on: ubuntu-latest
-    environment: prod
+    environment: ${{ inputs.environment || 'prod' }}
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Load Environment Configuration
+        run: |
+          chmod +x .github/scripts/*.sh
+          .github/scripts/load-config.sh "${{ inputs.environment || 'prod' }}"
+        env:
+          PIPELINE_SP_OBJECT_ID_OVERRIDE: ${{ vars.PIPELINE_SP_OBJECT_ID }}
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -189,39 +123,58 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run az stack sub create in Prod
-        shell: bash
+      - name: Deploy Subscription Deployment Stack
+        id: deploy
         run: |
           set -euo pipefail
 
-          PIPELINE_SP_OBJECT_ID="${{ vars.PIPELINE_SP_OBJECT_ID }}"
-          if [ -z "$PIPELINE_SP_OBJECT_ID" ]; then
-            PIPELINE_SP_OBJECT_ID="00000000-0000-0000-0000-000000000000"
-          fi
+          SUB_ID=$(az account show --query id -o tsv)
+          TENANT_ID=$(az account show --query tenantId -o tsv)
+          STACK_ID="/subscriptions/${SUB_ID}/providers/Microsoft.Resources/deploymentStacks/${STACK_NAME}"
+          PORTAL_STACK_URL="https://portal.azure.com/#@${TENANT_ID}/resource${STACK_ID}"
 
-          DEPLOY_CMD="az stack sub create --name \"${{ env.STACK_NAME }}\" --location \"${{ env.LOCATION }}\" --template-file \"${{ env.TEMPLATE_FILE }}\" --parameters \"${{ env.PARAMETERS_FILE }}\" --action-on-unmanage \"${{ env.AOU }}\" --deny-settings-mode \"${{ env.DENY }}\" --deny-settings-apply-to-child-scopes --deny-settings-excluded-principals \"${PIPELINE_SP_OBJECT_ID}\" --yes"
+          DEPLOY_CMD="az stack sub create --name \"${STACK_NAME}\" --location \"${LOCATION}\" --template-file \"${TEMPLATE_FILE}\" --parameters \"${PARAMETERS_FILE}\" --action-on-unmanage \"${AOU}\" --deny-settings-mode \"${DENY}\" --deny-settings-apply-to-child-scopes --deny-settings-excluded-principals \"${PIPELINE_SP_OBJECT_ID}\" --yes"
 
-          echo "Executing: $DEPLOY_CMD"
+          echo "Executing Stack Deployment:"
+          echo "$ $DEPLOY_CMD"
+
           az stack sub create \
-            --name "${{ env.STACK_NAME }}" \
-            --location "${{ env.LOCATION }}" \
-            --template-file "${{ env.TEMPLATE_FILE }}" \
-            --parameters "${{ env.PARAMETERS_FILE }}" \
-            --action-on-unmanage "${{ env.AOU }}" \
-            --deny-settings-mode "${{ env.DENY }}" \
+            --name "${STACK_NAME}" \
+            --location "${LOCATION}" \
+            --template-file "${TEMPLATE_FILE}" \
+            --parameters "${PARAMETERS_FILE}" \
+            --action-on-unmanage "${AOU}" \
+            --deny-settings-mode "${DENY}" \
             --deny-settings-apply-to-child-scopes \
             --deny-settings-excluded-principals "${PIPELINE_SP_OBJECT_ID}" \
-            --yes 2>&1 | tee /tmp/stack-create-prod.txt
+            --yes 2>&1 | tee /tmp/stack-deploy-output.txt
+
+          echo "portal_stack_url=$PORTAL_STACK_URL" >> "$GITHUB_OUTPUT"
 
           {
-            echo "## 🚀 Prod Stack Created/Updated (\`${{ env.STACK_NAME }}\`)"
+            echo "## 🚀 Deployment Stack Deployed Successfully"
             echo ""
-            echo "**Command:**"
+            echo "- 🏷️ **Stack Name:** \`${STACK_NAME}\`"
+            echo "- 🌍 **Environment:** \`${{ inputs.environment || 'prod' }}\`"
+            echo "- 🔗 **Azure Portal Resource:** [Open Deployment Stack in Azure](${PORTAL_STACK_URL})"
+            echo ""
+            echo "### Executed Command"
             echo '```bash'
             echo "$DEPLOY_CMD"
             echo '```'
             echo ""
+            echo "<details><summary>Deployment Log Output</summary>"
+            echo ""
             echo '```text'
-            cat /tmp/stack-create-prod.txt
+            cat /tmp/stack-deploy-output.txt
             echo '```'
+            echo ""
+            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Deployment Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-deployment-${{ inputs.environment || 'prod' }}-${{ github.sha }}
+          path: /tmp/stack-deploy-output.txt
+          retention-days: 14

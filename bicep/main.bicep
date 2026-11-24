@@ -1,6 +1,9 @@
 targetScope = 'subscription'
 
-@description('Workload identifier.')
+metadata name = 'Corporate Workload Deployment Stack'
+metadata description = 'Subscription-level deployment stack provisioning an end-to-end enterprise workload: Resource Group, Spoke VNet with Hub peering, Azure SQL with Entra ID authentication, Web & API App Services with Private Endpoints, and Private DNS.'
+
+@description('Workload identifier (e.g., finance, hr, core).')
 @minLength(2)
 @maxLength(16)
 param workload string = 'finance'
@@ -20,11 +23,12 @@ param location string = 'centralus'
 @description('Deployment stack name.')
 param stackName string = 'stack-${workload}-${environment}'
 
-@description('Instance index for naming.')
+@description('Instance index for naming disambiguation.')
 @minValue(1)
+@maxValue(99)
 param instanceIndex int = 1
 
-@description('Spoke VNet CIDR.')
+@description('Spoke VNet address space CIDR.')
 param vnetAddressPrefix string = '10.1.0.0/16'
 
 @description('Subnets configuration for spoke VNet.')
@@ -45,7 +49,7 @@ param subnets array = [
   }
 ]
 
-@description('Hub subscription ID.')
+@description('Hub connectivity subscription ID.')
 param hubSubscriptionId string = '7f493ff6-603b-4254-a6bf-e9acfc665866'
 
 @description('Hub resource group name.')
@@ -54,11 +58,11 @@ param hubResourceGroupName string = 'rg-connectivity-hub-prod'
 @description('Hub VNet name.')
 param hubVnetName string = 'vnet-platform-connectivity-prod'
 
-@description('App Service Plan SKU name.')
+@description('App Service Plan SKU name (e.g., B1, S1, P1v3).')
 param appServicePlanSku string = 'B1'
 
 @description('SQL Database name.')
-param sqlDatabaseName string = 'sqldb-finance-prod'
+param sqlDatabaseName string = 'sqldb-${workload}-${environment}'
 
 @description('Entra ID Admin Object ID for SQL Server.')
 param sqlAdminObjectId string
@@ -80,7 +84,7 @@ param apiAuthAppClientId string
 @secure()
 param apiAuthAppSecret string = ''
 
-@description('Additional tags merged with baseline tags.')
+@description('Additional tags merged with baseline governance tags.')
 param extraTags object = {}
 
 var paddedIndex = padLeft(string(instanceIndex), 2, '0')
@@ -100,6 +104,7 @@ var baselineTags = union(extraTags, {
   environment: environment
   managedBy: 'bicep-deployment-stack'
   costCenter: toLower('${workload}-${environment}')
+  deployedAt: utcNow('yyyy-MM-dd')
 })
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
@@ -255,7 +260,23 @@ module apiAppPrivateEndpoint './modules/privateEndpoint.bicep' = {
   }
 }
 
+@description('Resource ID of the deployed Resource Group.')
+output resourceGroupId string = rg.id
+
+@description('Name of the deployed Resource Group.')
 output resourceGroupName string = rg.name
+
+@description('Full HTTPS URL of the Web App.')
 output webAppUrl string = 'https://${webAppModule.outputs.appUrl}'
+
+@description('Full HTTPS URL of the API App.')
 output apiAppUrl string = 'https://${apiAppModule.outputs.appUrl}'
+
+@description('Fully Qualified Domain Name of the Azure SQL Server.')
+output sqlServerFqdn string = sqlServerModule.outputs.serverFullyQualifiedDomainName
+
+@description('Resource ID of the Spoke Virtual Network.')
+output vnetId string = network.outputs.vnetId
+
+@description('Deployment Stack name.')
 output stackName string = stackName

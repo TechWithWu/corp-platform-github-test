@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'bicep/**'
-      - '.github/workflows/bicep-stack-pr-whatif.yml'
+      - '.github/**'
 
 permissions:
   id-token: write
@@ -14,22 +14,21 @@ permissions:
   pull-requests: write
   actions: read
 
-env:
-  STACK_NAME: financeDeploymentStack
-  LOCATION: centralus
-  TEMPLATE_FILE: bicep/main.bicep
-  PARAMETERS_FILE: bicep/main.prod.bicepparam
-  AOU: deleteAll
-  DENY: denyWriteAndDelete
-  RETENTION: PT1H
-
 jobs:
   what-if:
+    name: Run Bicep What-If (prod-plan)
     runs-on: ubuntu-latest
-    environment: prod-whatif
+    environment: prod-plan
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Load Environment Configuration
+        run: |
+          chmod +x .github/scripts/*.sh
+          .github/scripts/load-config.sh prod
+        env:
+          PIPELINE_SP_OBJECT_ID_OVERRIDE: ${{ vars.PIPELINE_SP_OBJECT_ID }}
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -39,138 +38,29 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Validate & Build Bicep Template
-        shell: bash
         run: |
-          az bicep build --file "${{ env.TEMPLATE_FILE }}" --outfile /tmp/main.json
+          az bicep build --file "${TEMPLATE_FILE}" --outfile /tmp/main.json
 
-      - name: Run az stack-whatif sub create with Unique Timestamp Name
+      - name: Run Stack What-If Preview
         id: whatif
-        shell: bash
         run: |
-          set -euo pipefail
-
-          SUB_ID=$(az account show --query id -o tsv)
-          PIPELINE_SP_OBJECT_ID="${{ vars.PIPELINE_SP_OBJECT_ID }}"
-          if [ -z "$PIPELINE_SP_OBJECT_ID" ]; then
-            PIPELINE_SP_OBJECT_ID="00000000-0000-0000-0000-000000000000"
-          fi
-
-          STACK_ID="/subscriptions/${SUB_ID}/providers/Microsoft.Resources/deploymentStacks/${{ env.STACK_NAME }}"
-          TS_UTC=$(date -u +"%Y%m%d-%H%M%S-%3N")
-          WHATIF_NAME="wi-finance-prod-${TS_UTC}-${{ github.run_attempt }}"
-
-          CMD_STR="az stack-whatif sub create --name \"${WHATIF_NAME}\" --stack-id \"${STACK_ID}\" --location \"${{ env.LOCATION }}\" --template-file \"${{ env.TEMPLATE_FILE }}\" --parameters \"${{ env.PARAMETERS_FILE }}\" --action-on-unmanage \"${{ env.AOU }}\" --deny-settings-mode \"${{ env.DENY }}\" --validation-level \"ProviderNoRbac\" --deny-settings-apply-to-child-scopes --deny-settings-excluded-principals \"${PIPELINE_SP_OBJECT_ID}\" --retention-interval \"${{ env.RETENTION }}\""
-
-          {
-            echo "\$ $CMD_STR"
-            echo ""
-            az stack-whatif sub create \
-              --name "${WHATIF_NAME}" \
-              --stack-id "${STACK_ID}" \
-              --location "${{ env.LOCATION }}" \
-              --template-file "${{ env.TEMPLATE_FILE }}" \
-              --parameters "${{ env.PARAMETERS_FILE }}" \
-              --action-on-unmanage "${{ env.AOU }}" \
-              --deny-settings-mode "${{ env.DENY }}" \
-              --validation-level "ProviderNoRbac" \
-              --deny-settings-apply-to-child-scopes \
-              --deny-settings-excluded-principals "${PIPELINE_SP_OBJECT_ID}" \
-              --retention-interval "${{ env.RETENTION }}" 2>&1
-          } | tee /tmp/whatif-full.txt
-
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          WHATIF_RESOURCE_ID="${STACK_ID\%/deploymentStacks/*}/providers/Microsoft.Resources/deploymentStacksWhatIfResults/${WHATIF_NAME}"
-
-          jq -n \
-            --arg pr_number "${{ github.event.pull_request.number }}" \
-            --arg head_sha "${{ github.event.pull_request.head.sha }}" \
-            --arg whatif_name "$WHATIF_NAME" \
-            --arg whatif_resource_id "$WHATIF_RESOURCE_ID" \
-            --arg run_url "$RUN_URL" \
-            --arg command "$CMD_STR" \
-            --rawfile plan /tmp/whatif-full.txt \
-            '{
-              pr_number: ($pr_number | tonumber),
-              head_sha: $head_sha,
-              whatif_name: $whatif_name,
-              whatif_resource_id: $whatif_resource_id,
-              run_url: $run_url,
-              command: $command,
-              plan: $plan
-            }' > /tmp/whatif-payload.json
+          .github/scripts/run-whatif.sh
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
       - name: Upload What-If Artifact
         uses: actions/upload-artifact@v4
         with:
           name: pr-${{ github.event.pull_request.number }}-whatif
           path: |
-            /tmp/whatif-full.txt
+            /tmp/whatif-raw.txt
             /tmp/whatif-payload.json
           retention-days: 7
 
-      - name: Post or Update PR Comment with Command, Link, and Result
+      - name: Post or Update PR Review Comment
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const payload = JSON.parse(fs.readFileSync('/tmp/whatif-payload.json', 'utf8'));
-            const marker = '<!-- bicep-stack-whatif-comment -->';
-
-            const maxPlanLen = 56000;
-            let planText = payload.plan;
-            let truncated = false;
-            if (planText.length > maxPlanLen) {
-              planText = planText.slice(0, maxPlanLen) + '\n... [Output truncated; see full log in workflow run]';
-              truncated = true;
-            }
-
-            const embeddedJson = Buffer.from(JSON.stringify(payload)).toString('base64');
-
-            const body = [
-              marker,
-              `## 🔍 Stack What-If Preview: \`${payload.whatif_name}\``,
-              '',
-              `- **Workflow Run Link:** [Run #${{ github.run_id }}](${payload.run_url})`,
-              `- **What-If Resource Name:** \`${payload.whatif_name}\``,
-              `- **Commit SHA:** \`${payload.head_sha}\``,
-              '',
-              '### Executed Command',
-              '```bash',
-              payload.command,
-              '```',
-              '',
-              '### What-If Result',
-              truncated ? '> ⚠️ Output exceeded GitHub comment limit; full log is in the workflow run.' : '',
-              '```text',
-              planText,
-              '```',
-              '',
-              '<details><summary>Embedded What-If Metadata (for main deployment comparison)</summary>',
-              '',
-              `<!-- WHATIF_B64_START -->${embeddedJson}<!-- WHATIF_B64_END -->`,
-              '',
-              '</details>'
-            ].filter(Boolean).join('\n');
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body
-              });
-            }
+            const postPrComment = require('./.github/scripts/post-pr-comment.js');
+            await postPrComment({ github, context, mode: 'pr-whatif' });
