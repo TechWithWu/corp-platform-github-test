@@ -24,7 +24,7 @@ param sqlAdminLogin string
   'User'
   'Group'
 ])
-param sqlAdminPrincipalType string = 'Application'
+param sqlAdminPrincipalType string = 'Group'
 
 @description('Enforce Microsoft Entra ID-only authentication.')
 param azureAdOnlyAuthentication bool = true
@@ -40,25 +40,24 @@ param tags object = {}
 
 var hasUami = !empty(userAssignedIdentityId)
 
-resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
-  name: sqlServerName
-  location: location
-  tags: tags
-  identity: hasUami ? {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${userAssignedIdentityId}': {}
+module sqlServerAvm 'br/public:avm/res/sql/server:0.21.3' = {
+  name: 'avm-sql-${sqlServerName}'
+  params: {
+    name: sqlServerName
+    location: location
+    tags: tags
+    managedIdentities: hasUami ? {
+      userAssignedResourceIds: [
+        userAssignedIdentityId
+      ]
+    } : {
+      systemAssigned: true
     }
-  } : {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    version: '12.0'
     minimalTlsVersion: '1.2'
     publicNetworkAccess: disablePublicNetworkAccess ? 'Disabled' : 'Enabled'
     administratorLogin: !empty(sqlAdministratorLogin) ? sqlAdministratorLogin : null
     administratorLoginPassword: !empty(sqlAdministratorLoginPassword) ? sqlAdministratorLoginPassword : null
-    primaryUserAssignedIdentityId: hasUami ? userAssignedIdentityId : null
+    primaryUserAssignedIdentityResourceId: hasUami ? userAssignedIdentityId : null
     administrators: !empty(sqlAdminObjectId) ? {
       administratorType: 'ActiveDirectory'
       azureADOnlyAuthentication: azureAdOnlyAuthentication
@@ -71,10 +70,10 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
 }
 
 @description('FQDN of the SQL Logical Server.')
-output serverFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName
+output serverFullyQualifiedDomainName string = sqlServerAvm.outputs.fullyQualifiedDomainName
 
 @description('Resource ID of the SQL Logical Server.')
-output serverId string = sqlServer.id
+output serverId string = sqlServerAvm.outputs.resourceId
 
 @description('Name of the SQL Logical Server.')
-output serverName string = sqlServer.name
+output serverName string = sqlServerAvm.outputs.name

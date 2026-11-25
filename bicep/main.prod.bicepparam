@@ -6,7 +6,7 @@ using './main.bicep'
 
 param workload = 'finance'
 param environment = 'prod'
-param location = 'centralus'
+param location = 'westus2'
 param instanceIndex = 1
 
 param vnetAddressPrefix = '10.1.0.0/16'
@@ -35,10 +35,8 @@ param appServicePlanSku = 'B1'
 param sqlDatabaseName = 'sqldb-finance-prod'
 
 // Identity & Governance
-param sqlAdminObjectId = '00000000-0000-0000-0000-000000000001'
+param sqlAdminObjectId = 'cd016e03-5f34-404d-bb50-c139970285c3' //guokaswu_gmail.com
 param sqlAdminLogin = 'EntraAdmin-Finance-Prod'
-param webAuthAppClientId = '11111111-1111-1111-1111-111111111111'
-param apiAuthAppClientId = '22222222-2222-2222-2222-222222222222'
 
 param extraTags = {
   Environment: 'Production'

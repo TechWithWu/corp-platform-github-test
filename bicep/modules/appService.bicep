@@ -15,7 +15,7 @@ param linuxFxVersion string = 'DOTNETCORE|8.0'
 @description('Optional subnet resource ID for VNet regional integration.')
 param subnetId string = ''
 
-@description('Application settings array ({ name, value }). Prefer @Microsoft.KeyVault(...) references for secrets.')
+@description('Application settings array ({ name, value }). Supports @Microsoft.KeyVault(...) references.')
 param appSettings array = []
 
 @description('Connection strings array ({ name, connectionString, type }).')
@@ -24,10 +24,10 @@ param connectionStrings array = []
 @description('Enable Microsoft Entra ID (Easy Auth v2) authentication.')
 param useAuth bool = true
 
-@description('Entra ID App Registration Client ID.')
+@description('Entra ID App Registration Client ID (plain value or @Microsoft.KeyVault(...) reference).')
 param authClientId string = ''
 
-@description('Entra ID App Registration Client Secret or Key Vault reference.')
+@description('Entra ID App Registration Client Secret (plain value or @Microsoft.KeyVault(...) reference).')
 @secure()
 param authClientSecret string = ''
 
