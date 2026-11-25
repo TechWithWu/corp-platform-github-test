@@ -19,23 +19,24 @@ param capacity int = 1
 @description('Tags applied to the resource.')
 param tags object = {}
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: planName
-  location: location
-  tags: tags
-  sku: {
-    name: skuName
-    tier: skuTier
-    capacity: capacity
-  }
-  kind: 'linux'
-  properties: {
+module appServicePlanAvm 'br/public:avm/res/web/serverfarm:0.4.1' = {
+  name: 'avm-asp-${planName}'
+  params: {
+    name: planName
+    location: location
+    tags: tags
+    sku: {
+      name: skuName
+      tier: skuTier
+      capacity: capacity
+    }
+    kind: 'linux'
     reserved: true
   }
 }
 
 @description('Resource ID of the App Service Plan.')
-output planId string = appServicePlan.id
+output planId string = appServicePlanAvm.outputs.resourceId
 
 @description('Name of the App Service Plan.')
-output planName string = appServicePlan.name
+output planName string = appServicePlanAvm.outputs.name

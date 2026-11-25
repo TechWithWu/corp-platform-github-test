@@ -34,6 +34,9 @@ param authClientSecret string = ''
 @description('Whether this app acts as a backend API (returns 401 instead of redirecting to login).')
 param isApi bool = false
 
+@description('Always on setting for the site.')
+param alwaysOn bool = true
+
 @description('Tags applied to the resource.')
 param tags object = {}
 
@@ -48,23 +51,25 @@ var secretAppSetting = (!empty(authClientSecret)) ? [
 
 var mergedAppSettings = union(appSettings, secretAppSetting)
 
-resource webApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: appName
-  location: location
-  tags: tags
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    httpsOnly: true
-    serverFarmId: planId
+module appServiceAvm 'br/public:avm/res/web/site:0.15.1' = {
+  name: 'avm-app-${appName}'
+  params: {
+    name: appName
+    location: location
+    tags: tags
+    kind: 'app'
+    serverFarmResourceId: planId
     virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
+    httpsOnly: true
+    managedIdentities: {
+      systemAssigned: true
+    }
     siteConfig: {
       linuxFxVersion: linuxFxVersion
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       vnetRouteAllEnabled: true
-      alwaysOn: true
+      alwaysOn: alwaysOn
       http20Enabled: true
       appSettings: mergedAppSettings
       connectionStrings: connectionStrings
@@ -72,9 +77,11 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-resource authSettings 'Microsoft.Web/sites/config@2023-12-01' = if (useAuth) {
-  name: 'authsettingsV2'
-  parent: webApp
+resource authSettings 'Microsoft.Web/sites/config@2023-12-01' = if (useAuth && !empty(authClientId)) {
+  name: '${appName}/authsettingsV2'
+  dependsOn: [
+    appServiceAvm
+  ]
   properties: {
     identityProviders: {
       azureActiveDirectory: {
@@ -82,7 +89,7 @@ resource authSettings 'Microsoft.Web/sites/config@2023-12-01' = if (useAuth) {
         registration: {
           clientId: authClientId
           clientSecretSettingName: !empty(authClientSecret) ? clientSecretSettingName : null
-          openIdIssuer: '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
+          openIdIssuer: '${az.environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
         }
         validation: {
           allowedAudiences: [
@@ -104,10 +111,10 @@ resource authSettings 'Microsoft.Web/sites/config@2023-12-01' = if (useAuth) {
 }
 
 @description('Resource ID of the App Service.')
-output appId string = webApp.id
+output appId string = appServiceAvm.outputs.resourceId
 
 @description('Default hostname of the App Service.')
-output appUrl string = webApp.properties.defaultHostName
+output appUrl string = appServiceAvm.outputs.defaultHostname
 
 @description('System-assigned managed identity principal ID.')
-output principalId string = webApp.identity.principalId
+output principalId string = appServiceAvm.outputs.systemAssignedMIPrincipalId
